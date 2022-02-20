@@ -1,6 +1,3 @@
-#
-# The main search hooks for the Search Flask application.
-#
 from flask import (
     Blueprint, redirect, render_template, request, url_for
 )
@@ -19,19 +16,51 @@ def process_filters(filters_input):
     filters = []
     display_filters = []  # Also create the text we will use to display the filters that are applied
     applied_filters = ""
-    for filter in filters_input:
-        type = request.args.get(filter + ".type")
-        display_name = request.args.get(filter + ".displayName", filter)
+    for f in filters_input:
+        type = request.args.get(f + ".type")
+        display_name = request.args.get(f + ".displayName", f)
         #
         # We need to capture and return what filters are already applied so they can be automatically added to any existing links we display in aggregations.jinja2
-        applied_filters += "&filter.name={}&{}.type={}&{}.displayName={}".format(filter, filter, type, filter,
+        applied_filters += "&filter.name={}&{}.type={}&{}.displayName={}".format(f, f, type, f,
                                                                                  display_name)
         #TODO: IMPLEMENT AND SET filters, display_filters and applied_filters.
         # filters get used in create_query below.  display_filters gets used by display_filters.jinja2 and applied_filters gets used by aggregations.jinja2 (and any other links that would execute a search.)
         if type == "range":
-            pass
+            if not to_filter :
+                filters.append({
+                    "range": {
+                        f: {
+                            "gte": request.args.get(f + ".from") 
+                        }
+                    }
+                })
+            elif not from_filter :
+                filters.append({
+                    "range": {
+                        f: {
+                            "lt": request.args.get(f + ".to") 
+                        }
+                    }
+                })    
+            else:
+                filters.append({
+                    "range": {
+                        f: {
+                            "lt": request.args.get(f + ".to") ,
+                            "gte": request.args.get(f + ".from") 
+                        }
+                    }
+                })
+            applied_filters += "&filter.name={}&{}.type={}&{}.from={}&{}.to={}&{}.key={}&{}.displayName={}".format(f, f, type, f, request.args.get(f + ".from") , f, request.args.get(f + ".to") , f, key, f, display_name)
+            display_filters.append(f"Returning all results using {f} filter from {request.args.get(f + '.from') } to {request.args.get(f + '.to')}")
         elif type == "terms":
-            pass #TODO: IMPLEMENT
+            filters.append({
+                "term": {
+                    f: key
+                }
+            })
+            display_filters.append(f"Returning all results from {key} {f}  ")
+            applied_filters += "&filter.name={}&{}.type={}&{}.key={}&{}.displayName={}".format(f, f, type, f, key, f, display_name)
     print("Filters: {}".format(filters))
 
     return filters, display_filters, applied_filters
@@ -74,7 +103,7 @@ def query():
         query_obj = create_query("*", [], sort, sortDir)
 
     print("query obj: {}".format(query_obj))
-    response = None   # TODO: Replace me with an appropriate call to OpenSearch
+    response = opensearch.search(body=query_obj, index="bbuy_products") #this will return the results for the query specified in query_obj
     # Postprocess results here if you so desire
 
     #print(response)
@@ -85,16 +114,56 @@ def query():
     else:
         redirect(url_for("index"))
 
-
+#"fields": ["name^100", "shortDescription^50", "longDescription^10", "department"]
 def create_query(user_query, filters, sort="_score", sortDir="desc"):
     print("Query: {} Filters: {} Sort: {}".format(user_query, filters, sort))
     query_obj = {
         'size': 10,
         "query": {
-            "match_all": {} # Replace me with a query that both searches and filters
+            "bool": {
+                "must": {
+                    "multi_match": {
+                        "query": user_query,
+                        "fields": ["name^100", "shortDescription^50", "longDescription^10", "department"]
+                    }
+                },
+      "filter": filters
+    }
+  },
+       "aggs": {
+            "regularPrice": {
+                    "range": {
+                        "field": "regularPrice",
+                        "ranges": [
+                            {
+                                "key": "$",
+                                "to": 100
+                            },
+                            {
+                                "key": "$$",
+                                "from": 100,
+                                "to": 200
+                            },
+                            {
+                                "key": "$$$",
+                                "from": 200,
+                                "to": 300
+                            },
+                            {
+                                "key": "$$$$",
+                                "from": 300 ,
+                                 "to": 400                   
+                            },
+                            {
+                                "key": "$$$$$",
+                                "from": 400                    
+                            }
+                        ]
+                    }
+                },
+                "missing_images": {"missing": { "field": "image" }},
+                "department": {"terms": { "field": "department.keyword" }}
         },
-        "aggs": {
-            #TODO: FILL ME IN
-        }
+        "sort": [{sort: {"order": sortDir}}]
     }
     return query_obj
