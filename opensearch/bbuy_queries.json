@@ -4,20 +4,66 @@
   },
   "mappings": {
     "properties": {
-      "user": {"type": "keyword"},
-      "sku": {"type": "long"},
-      "category": {"type": "keyword"},
-      "query":{
+      "@timestamp": {
+        "type": "date"
+      },
+      "@version": {
         "type": "text",
-        "analyzer": "english",
         "fields": {
           "keyword": {
-            "type": "keyword"
+            "type": "keyword",
+            "ignore_above": 256
           }
         }
       },
-      "click_time": {"type": "date", "format": "yyyy-MM-dd[T]HH:mm:ss.[SSS][SS][S][Z]"},
-      "query_time": {"type": "date", "format": "yyyy-MM-dd[T]HH:mm:ss.[SSS][SS][S][Z]"}
+      "category": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+      "click_time": {
+        "type": "date",
+        "format": "yyyy-MM-dd HH:mm:ss.S||yyyy-MM-dd HH:mm:ss.SS||yyyy-MM-dd HH:mm:ss.SSSZ||yyyy-MM-dd HH:mm:ss.SSS||yyyy-MM-dd HH:mm:ssZ||yyyy-MM-dd||epoch_millis||strict_date_optional_time"
+      },
+      "query": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "stemmed": {
+            "type": "text",
+            "analyzer": "english"
+          }
+        }
+      },
+      "query_time": {
+        "type": "date",
+        "format": "yyyy-MM-dd HH:mm:ss.S||yyyy-MM-dd HH:mm:ss.SS||yyyy-MM-dd HH:mm:ss.SSSZ||yyyy-MM-dd HH:mm:ss.SSS||yyyy-MM-dd HH:mm:ssZ||yyyy-MM-dd||epoch_millis||strict_date_optional_time"
+      },
+      "sku": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+      "user": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      }
     }
   }
 }

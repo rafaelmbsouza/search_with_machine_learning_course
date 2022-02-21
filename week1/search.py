@@ -14,45 +14,52 @@ bp = Blueprint('search', __name__, url_prefix='/search')
 def process_filters(filters_input):
     # Filters look like: &filter.name=regularPrice&regularPrice.key={{ agg.key }}&regularPrice.from={{ agg.from }}&regularPrice.to={{ agg.to }}
     filters = []
-    display_filters = []  # Also create the text we will use to display the filters that are applied
+    # Also create the text we will use to display the filters that are applied
+    display_filters = []
     applied_filters = ""
     for f in filters_input:
         type = request.args.get(f + ".type")
         display_name = request.args.get(f + ".displayName", f)
+        key = request.args.get(f + ".key")
         #
         # We need to capture and return what filters are already applied so they can be automatically added to any existing links we display in aggregations.jinja2
         applied_filters += "&filter.name={}&{}.type={}&{}.displayName={}".format(f, f, type, f,
                                                                                  display_name)
-        #TODO: IMPLEMENT AND SET filters, display_filters and applied_filters.
+        # TODO: IMPLEMENT AND SET filters, display_filters and applied_filters.
         # filters get used in create_query below.  display_filters gets used by display_filters.jinja2 and applied_filters gets used by aggregations.jinja2 (and any other links that would execute a search.)
         if type == "range":
-            if not to_filter :
+            to_filter = request.args.get(f + ".to")
+            from_filter = request.args.get(f + ".from")
+
+            if not to_filter:
                 filters.append({
                     "range": {
                         f: {
-                            "gte": request.args.get(f + ".from") 
+                            "gte": from_filter
                         }
                     }
                 })
-            elif not from_filter :
+            elif not from_filter:
                 filters.append({
                     "range": {
                         f: {
-                            "lt": request.args.get(f + ".to") 
+                            "lt": to_filter
                         }
                     }
-                })    
+                })
             else:
                 filters.append({
                     "range": {
                         f: {
-                            "lt": request.args.get(f + ".to") ,
-                            "gte": request.args.get(f + ".from") 
+                            "lt": to_filter,
+                            "gte": from_filter
                         }
                     }
                 })
-            applied_filters += "&filter.name={}&{}.type={}&{}.from={}&{}.to={}&{}.key={}&{}.displayName={}".format(f, f, type, f, request.args.get(f + ".from") , f, request.args.get(f + ".to") , f, key, f, display_name)
-            display_filters.append(f"Returning all results using {f} filter from {request.args.get(f + '.from') } to {request.args.get(f + '.to')}")
+            applied_filters += "&filter.name={}&{}.type={}&{}.from={}&{}.to={}&{}.key={}&{}.displayName={}".format(
+                f, f, type, f, from_filter, f, to_filter, f, key, f, display_name)
+            display_filters.append(
+                f"Returning all results using {f} filter from {from_filter } to {to_filter}")
         elif type == "terms":
             filters.append({
                 "term": {
@@ -60,7 +67,8 @@ def process_filters(filters_input):
                 }
             })
             display_filters.append(f"Returning all results from {key} {f}  ")
-            applied_filters += "&filter.name={}&{}.type={}&{}.key={}&{}.displayName={}".format(f, f, type, f, key, f, display_name)
+            applied_filters += "&filter.name={}&{}.type={}&{}.key={}&{}.displayName={}".format(
+                f, f, type, f, key, f, display_name)
     print("Filters: {}".format(filters))
 
     return filters, display_filters, applied_filters
@@ -69,7 +77,8 @@ def process_filters(filters_input):
 # Our main query route.  Accepts POST (via the Search box) and GETs via the clicks on aggregations/facets
 @bp.route('/query', methods=['GET', 'POST'])
 def query():
-    opensearch = get_opensearch() # Load up our OpenSearch client from the opensearch.py file.
+    # Load up our OpenSearch client from the opensearch.py file.
+    opensearch = get_opensearch()
     # Put in your code to query opensearch.  Set error as appropriate.
     error = None
     user_query = None
@@ -103,10 +112,11 @@ def query():
         query_obj = create_query("*", [], sort, sortDir)
 
     print("query obj: {}".format(query_obj))
-    response = opensearch.search(body=query_obj, index="bbuy_products") #this will return the results for the query specified in query_obj
+    # this will return the results for the query specified in query_obj
+    response = opensearch.search(body=query_obj, index="bbuy_products")
     # Postprocess results here if you so desire
 
-    #print(response)
+    # print(response)
     if error is None:
         return render_template("search_results.jinja2", query=user_query, search_response=response,
                                display_filters=display_filters, applied_filters=applied_filters,
@@ -114,56 +124,87 @@ def query():
     else:
         redirect(url_for("index"))
 
-#"fields": ["name^100", "shortDescription^50", "longDescription^10", "department"]
+
 def create_query(user_query, filters, sort="_score", sortDir="desc"):
     print("Query: {} Filters: {} Sort: {}".format(user_query, filters, sort))
     query_obj = {
-        'size': 10,
+        "size": 10,
+        "sort": [{sort: {"order": sortDir}}],
         "query": {
-            "bool": {
-                "must": {
-                    "multi_match": {
-                        "query": user_query,
-                        "fields": ["name^100", "shortDescription^50", "longDescription^10", "department"]
+            "function_score": {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "query_string": {
+                                    "fields": ["name^1000", "shortDescription^50", "longDescription^10", "department"],
+                                    "query": user_query
+                                }
+                            }
+                        ],
+                        "filter": filters
                     }
                 },
-      "filter": filters
-    }
-  },
-       "aggs": {
+                "boost_mode": "multiply",
+                "score_mode": "avg",
+                "functions": [
+                    {
+                        "field_value_factor": {
+                            "field": "salesRankLongTerm",
+                            "missing": 100000000,
+                            "modifier": "reciprocal"
+                        }
+                    },
+                    {
+                        "field_value_factor": {
+                            "field": "salesRankMediumTerm",
+                            "missing": 100000000,
+                            "modifier": "reciprocal"
+                        }
+                    },
+                    {
+                        "field_value_factor": {
+                            "field": "salesRankShortTerm",
+                            "missing": 100000000,
+                            "modifier": "reciprocal"
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
             "regularPrice": {
-                    "range": {
-                        "field": "regularPrice",
-                        "ranges": [
+                "range": {
+                    "field": "regularPrice",
+                    "ranges": [
                             {
                                 "key": "$",
                                 "to": 100
                             },
-                            {
+                        {
                                 "key": "$$",
                                 "from": 100,
                                 "to": 200
-                            },
-                            {
+                                },
+                        {
                                 "key": "$$$",
                                 "from": 200,
                                 "to": 300
-                            },
-                            {
+                                },
+                        {
                                 "key": "$$$$",
-                                "from": 300 ,
-                                 "to": 400                   
-                            },
-                            {
+                                "from": 300,
+                                "to": 400
+                                },
+                        {
                                 "key": "$$$$$",
-                                "from": 400                    
-                            }
-                        ]
-                    }
-                },
-                "missing_images": {"missing": { "field": "image" }},
-                "department": {"terms": { "field": "department.keyword" }}
-        },
-        "sort": [{sort: {"order": sortDir}}]
+                                "from": 400
+                                }
+                    ]
+                }
+            },
+            "missing_images": {"missing": {"field": "image"}},
+            "department": {"terms": {"field": "department.keyword"}}
+        }
     }
     return query_obj
