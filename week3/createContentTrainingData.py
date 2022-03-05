@@ -3,13 +3,19 @@ import os
 import random
 import xml.etree.ElementTree as ET
 from pathlib import Path
+import nltk
+from nltk.stem import SnowballStemmer
+import pandas as pd
 
-def transform_name(product_name):
-    # IMPLEMENT
+def transform_name(product_name, stemmer):
+    product_name = stemmer.stem(product_name.lower())
     return product_name
+
+df_output = pd.DataFrame(columns = ['cat','name'])
 
 # Directory for product data
 directory = r'/workspace/search_with_machine_learning_course/data/pruned_products/'
+stemmer = SnowballStemmer('english')
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 general = parser.add_argument_group("general")
@@ -40,6 +46,7 @@ with open(output_file, 'w') as output:
     for filename in os.listdir(directory):
         if filename.endswith(".xml"):
             print("Processing %s" % filename)
+            recs = []
             f = os.path.join(directory, filename)
             tree = ET.parse(f)
             root = tree.getroot()
@@ -50,9 +57,13 @@ with open(output_file, 'w') as output:
                 if (child.find('name') is not None and child.find('name').text is not None and
                     child.find('categoryPath') is not None and len(child.find('categoryPath')) > 0 and
                     child.find('categoryPath')[len(child.find('categoryPath')) - 1][0].text is not None):
-                      # Choose last element in categoryPath as the leaf categoryId
-                      cat = child.find('categoryPath')[len(child.find('categoryPath')) - 1][0].text
-                      # Replace newline chars with spaces so fastText doesn't complain
-                      name = child.find('name').text.replace('\n', ' ')
-                      output.write("__label__%s %s\n" % (cat, transform_name(name)))
+                    # Choose last element in categoryPath as the leaf categoryId
+                    cat = child.find('categoryPath')[len(child.find('categoryPath')) - 1][0].text
+                    # Replace newline chars with spaces so fastText doesn't complain
+                    name = child.find('name').text.replace('\n', ' ')
+                    recs.append({'cat':cat, 'name':name})
+            df_output = pd.concat([df_output, pd.DataFrame.from_records(recs)], ignore_index=True)
+    grouped = df_output.groupby('cat').filter(lambda x: len(x) >= min_products)
+    for index, row in grouped.iterrows():                 
+        output.write("__label__%s %s\n" % (row['cat'], transform_name(row['name'], stemmer)))
 
