@@ -1,4 +1,6 @@
 import math
+import nltk
+stemmer = nltk.stem.PorterStemmer()
 # some helpful tools for dealing with queries
 def create_stats_query(aggs, extended=True):
     print("Creating stats query from %s" % aggs)
@@ -135,6 +137,10 @@ def create_simple_baseline(user_query, click_prior_query, filters, sort="_score"
     if include_aggs:
         add_aggs(query_obj)
     return query_obj
+
+def normalize_query(query):
+    normalized_query = " ".join([stemmer.stem(word) for word in nltk.word_tokenize(query.lower()) if word.isalnum()])
+    return normalized_query
 
 # Hardcoded query here.  Better to use search templates or other query config.
 def create_query(user_query, click_prior_query, filters, sort="_score", sortDir="desc", size=10, include_aggs=True, highlight=True, source=None):
